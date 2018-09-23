@@ -90,7 +90,8 @@ command_error_end:
 	.section .bss
 
 	.lcomm wad_id, 4
-	.lcomm ascifiedint, 18
+	.lcomm ascifiedint, 32
+	.lcomm ascifiedint_length, 4
 
 # TEXT	
 	.section .text
@@ -217,7 +218,6 @@ a_wad:
 	int $0x80
 
 	movl numlumps, %eax
-	call int2ascii
 	call printAscifiedInt
 
 	movl $4, %eax
@@ -226,7 +226,6 @@ a_wad:
 	int $0x80
 
 	movl diroffset, %eax
-	call int2ascii
 	call printAscifiedInt
 
 
@@ -266,7 +265,6 @@ lumpread_loop2:
 	int $0x80
 
 	movl (%esi), %eax
-	call int2ascii
 	call printAscifiedInt
 
 	addl $4, %esi
@@ -277,7 +275,6 @@ lumpread_loop2:
 	int $0x80
 
 	movl (%esi), %eax
-	call int2ascii
 	call printAscifiedInt
 
 	addl $4, %esi
@@ -305,7 +302,6 @@ lumpread_loop2:
 
 	movl lumpoffset, %eax
 	movl lumpsize, %eax
-	call int2ascii
 	call printAscifiedInt
 	
 	popl %ebx
@@ -335,7 +331,6 @@ lumpread_loop:
 	int $0x80
 
 	movl lumpoffset, %eax
-	call int2ascii
 	call printAscifiedInt
 
 	movl $4, %eax
@@ -345,7 +340,6 @@ lumpread_loop:
 	int $0x80
 
 	movl lumpsize, %eax
-	call int2ascii
 	call printAscifiedInt
 	
 	popl %ebx
@@ -353,11 +347,8 @@ lumpread_loop:
 	loop lumpread_loop
 
 end:
-	movl lumpoffset, %eax
-	call int2ascii
-	movl %edx, %ebx
 	movl $1, %eax
-#	movl $0, %ebx
+	movl $0, %ebx
 	int $0x80
 
 badfile:
@@ -405,13 +396,14 @@ readLumpInfo:
 
 
 # FUNCTION : printAscifiedInt
+	# The int is in %eax
 	.type printAscifiedInt, @function
+	call int2ascii
 printAscifiedInt:
 	movl $4, %eax
 	movl $1, %ebx
-	movl $ascifiedint, %ecx
-	leal ascifiedint+12, %edi
-	movl (%edi), %edx
+	movl %edi, %ecx
+	movl ascifiedint_length, %edx
 	int $0x80
 	ret
 
@@ -419,35 +411,18 @@ printAscifiedInt:
 # FUNCTION : int2ascii
 	.type int2ascii, @function
 int2ascii:
-	# The int is in %eax
-	pushl %esi
-	leal ascifiedint+9, %edi
-	xor %ebx, %ebx
+	leal ascifiedint+31, %edi
+	movb $10, (%edi)
+	dec %edi
 	movl $10, %ecx
+	movl $2, ascifiedint_length
 nextdigit:	
 	xor %edx, %edx
 	divl %ecx
-	inc %ebx
-	addb $0x30, %dl
+	orb $0x30, %dl
 	movb %dl, (%edi)
-	inc %edi
+	dec %edi
+	incl ascifiedint_length
 	cmpl $0, %eax
 	jnz nextdigit
-	movl %ebx, %ecx
-	
-	# We have the string, now reverse it.
-	leal ascifiedint, %edi
-	leal ascifiedint+8, %esi
-	add %ecx, %esi
-nextdigit_2:
-	movb (%esi), %al
-	movb %al, (%edi)
-	dec %esi
-	inc %edi
-	loop nextdigit_2
-	movb $'\n', (%edi)
-	inc %ebx
-	leal ascifiedint+12, %edi
-	movl %ebx, (%edi)
-	popl %esi
 	ret
