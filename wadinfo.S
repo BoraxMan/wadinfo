@@ -23,69 +23,67 @@ BRK_Start:
 	.int 0
 BRK_End:
 	.int 0
-
 filename_length:
 	.int 0
+
 intro:
-	.ascii "Wadinfo: By Dennis Katsonis September 2015\n\n"
-intro_end:
-	.equ intro_len, intro_end - intro
+	.ascii "Wadinfo: By Dennis Katsonis, Sep 2015\n\n"
+intro_len =  . - intro
+	
 iwad_id:
 	.ascii "IWAD"
 pwad_id:
 	.ascii "PWAD"
-wadfile:	
-	.asciz "test.wad"
-wadfile_end:	
-	.equ wadfile_len, wadfile_end - wadfile
+
 file_error:
-	.ascii "Could not open file "
-file_error_end:
-	.equ file_error_len, file_error_end - file_error
+	.ascii "Can't open file.\n"
+file_error_len = . - file_error
 
 read_error:
-	.ascii "Could not read file.\n"
-read_error_end:
-	.equ read_error_len, read_error_end - read_error
+	.ascii "Can't read file.\n"
+read_error_len = . - read_error
 
 notwad:
-	.ascii "Not a wad file.\n"
-notwad_end:
-	.equ notwad_len, notwad_end - notwad
+	.ascii "Not a wad.\n"
+notwad_len = . - notwad
+
 wadtype:
-	.ascii "Type of WAD file is XXXX\n"
-wadtype_end:
-	.equ wadtype_len, wadtype_end - wadtype
+	.ascii "WAD Type : "
+wadtypeoff = . - wadtype
+	.ascii "XXXX\n"
+wadtype_len = . - wadtype
 
 lumpoffsetlabel:
-	.ascii "Byte offset in WAD file of the start of the directory is "
-lumpoffsetlabel_end:
-	.equ lumpoffsetlabel_len, lumpoffsetlabel_end - lumpoffsetlabel
+	.ascii "Offset of directory : "
+lumpoffsetlabel_len = . - lumpoffsetlabel
 
 lumpname:
 	.ascii "\nLump: "
-lumpname_end:
-	.equ lumpname_len, lumpname_end - lumpname
+lumpname_len = . - lumpname
 
 numlumps_label:
-	.ascii "The number of lumps is "
-numlumps_label_end:
-	.equ numlumps_label_len, numlumps_label_end - numlumps_label
+	.ascii "Number of lumps : "
+numlumps_label_len = . - numlumps_label
 	
 offset:
 	.ascii "\nOffset: "
-offset_end:
-	.equ offset_len, offset_end - offset
+offset_len = . - offset
+	
 size_label:
 	.ascii "Size: "
-size_label_end:
-	.equ size_label_len, size_label_end - size_label
+size_label_len = . - size_label
 
 command_error:
-	.ascii "How to use:\nwadinfo wadfile.wad\n"
-command_error_end:
-	.equ command_error_len, command_error_end - command_error
+	.ascii "wadinfo wadfile.wad\n"
+command_error_len = . - command_error
 
+	sys_read = 0x03
+	sys_write = 0x04
+	sys_lseek = 0x13
+	sys_open = 0x05
+	sys_brk = 0x2d
+	lumpnamesize = 8
+	
 # BSS
 	.section .bss
 
@@ -104,18 +102,16 @@ _start:
 	int $0x80
 	movl %eax, BRK_Start
 	movl %eax, BRK_End
-	
 
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $intro, %ecx
 	movl $intro_len, %edx
 	int $0x80
-                         
 	movl (%esp), %ecx
 	cmp $2, %ecx
 	je success
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $command_error, %ecx
 	movl $command_error_len, %edx
@@ -125,25 +121,10 @@ _start:
 	int $0x80
 	
 success:	
-	movl %esp, %ebp
-	addl $8, %ebp
-	movl (%ebp), %edi
-	
-	sub %ecx, %ecx
-	not %ecx
-	sub %al, %al
-	cld
-	repne scasb
-	not %ecx
-	dec %ecx
-
-	movl %ecx, %edx
-	movl %ecx, filename_length
-	
-	movl $5, %eax
-	movl (%ebp), %ebx
-	movl $0, %ecx
-	movl $0644, %edx
+	movl $sys_open, %eax
+	movl 8(%esp), %ebx
+	xor %ecx, %ecx
+	xor %edx, %edx
 	int $0x80
 	test %eax, %eax
 	js badfile
@@ -173,7 +154,7 @@ success:
 	je a_wad
 
 not_a_wad:
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $notwad, %ecx
 	movl $notwad_len, %edx
@@ -181,38 +162,37 @@ not_a_wad:
 	jmp end			
 
 a_wad:	
-	movl $3, %eax
+	movl $sys_read, %eax
 	movl $4, %edx
 	movl $numlumps, %ecx
 	int $0x80
 	test %eax, %eax
 	js badread
 
-	movl $3, %eax
+	movl $sys_read, %eax
 	movl $diroffset, %ecx
 	movl $4, %edx
 	int $0x80
 	test %eax, %eax
 	js badread
 
-	movl $0x13, %eax
+	movl $sys_lseek, %eax
 	movl diroffset, %ecx
-	movl $0, %edx
+	xor %edx, %edx
 	int $0x80 # Move the file pointer to the wad directory.
 
 	pushl %ebx 		# Save file handle
 
 	movl wad_id, %eax
 	movl $wadtype, %edi
-	movl %eax, 20(%edi)
+	movl %eax, wadtypeoff(%edi)
 	
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $wadtype, %ecx
 	movl $wadtype_len, %edx
 	int $0x80
-
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $numlumps_label, %ecx
 	movl $numlumps_label_len, %edx
 	int $0x80
@@ -220,7 +200,7 @@ a_wad:
 	movl numlumps, %eax
 	call printAscifiedInt
 
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $lumpoffsetlabel, %ecx
 	movl $lumpoffsetlabel_len, %edx
 	int $0x80
@@ -238,13 +218,12 @@ a_wad:
 	# number of bytes we need to allocate.
 	pushl %ebx	
 	addl BRK_End, %ebx # Add to breakpoint
-	movl $45, %eax
+	movl $sys_brk, %eax
 	int $0x80
 
- 	movl $3, %eax	# Read
+ 	movl $sys_read, %eax	# Read
 	popl  %edx # Restore number of bytes 
 	# allocated, as this is the number we will read.
-	xor %esi, %esi
 	movl BRK_Start, %esi
 	
 	popl %ebx # And restore the file handle
@@ -256,25 +235,22 @@ a_wad:
 lumpread_loop2:
 	pushl %ecx
 
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
- 
  	movl $lumpname, %ecx
  	movl $lumpname_len, %edx
  	int $0x80
-	
 
 	movl %esi, %edi
-	add $8, %edi 	# Point EDI to start of LUMPNAME string
+	add $lumpnamesize, %edi 	# Point EDI to start of LUMPNAME string
 	call findnull
 	movl $1, %ebx
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl %esi, %ecx
-	add $8, %ecx
-#	movl $8, %edx
+	add $lumpnamesize, %ecx
 	int $0x80
 
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $offset, %ecx
 	movl $offset_len, %edx
@@ -283,7 +259,7 @@ lumpread_loop2:
 	movl (%esi), %eax
 	call printAscifiedInt
 
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $size_label, %ecx
 	movl $size_label_len, %edx
@@ -295,27 +271,21 @@ lumpread_loop2:
 	addl $16, %esi
 	popl %ecx
 	loop lumpread_loop2
-	jmp end
-
 end:
 	movl $1, %eax
 	movl $0, %ebx
 	int $0x80
 
 badfile:
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $file_error, %ecx
 	movl $file_error_len, %edx
 	int $0x80
-	movl $4, %eax
-	movl (%ebp), %ecx
-	movl filename_length, %edx
-	int $0x80
 	jmp end			
 
 badread:
-	movl $4, %eax
+	movl $sys_write, %eax
 	movl $1, %ebx
 	movl $read_error, %ecx
 	movl $read_error_len, %edx
@@ -327,18 +297,6 @@ badread:
 	# The int is in %eax
 	.type printAscifiedInt, @function
 printAscifiedInt:
-	call int2ascii
-	movl $4, %eax
-	movl $1, %ebx
-	movl %edi, %ecx
-	movl ascifiedint_length, %edx
-	int $0x80
-	ret
-
-
-# FUNCTION : int2ascii
-	.type int2ascii, @function
-int2ascii:
 	leal ascifiedint+31, %edi
 	movb $10, (%edi) # Trailing newline
 	dec %edi
@@ -359,18 +317,25 @@ enddigit:
 	movl $ascifiedint+32, %eax
 	subl %edi, %eax
 	movl %eax, ascifiedint_length
+
+	movl $4, %eax
+	movl $1, %ebx
+	movl %edi, %ecx
+	movl ascifiedint_length, %edx
+	int $0x80
 	ret
+
 # FUNCTION : findnull
 	# Based on a string pointed by EDI, return in EDX the location
 	# of the NULL, otherwise return 8.
 	
 findnull:	
-	movl $8, %ecx	# Length of LUMPNAME
+	movl $lumpnamesize, %ecx	# Length of LUMPNAME
 	movl %ecx, %edx	# Set length to print to 8.
 	# Anything shorter than 8 characters for a LUMPNAME
 	# should be NULL terminated.
 	# If null terminated, we do not print the NULL
-	movl $0, %eax	# Searching for NULL
+	xor %eax, %eax	# Searching for NULL
 	cld
 	repne scasb
 	jne notfound
