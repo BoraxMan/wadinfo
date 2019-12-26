@@ -200,7 +200,7 @@ a_wad:
 	movl $0, %edx
 	int $0x80 # Move the file pointer to the wad directory.
 
-	pushl %ebx
+	pushl %ebx 		# Save file handle
 
 	movl wad_id, %eax
 	movl $wadtype, %edi
@@ -236,13 +236,13 @@ a_wad:
 	shl $4, %ebx # Each entry is 16 bytes, so
 	# multiply number of entries by 16 to get the
 	# number of bytes we need to allocate.
-	pushl %ebx
+	pushl %ebx	
 	addl BRK_End, %ebx # Add to breakpoint
 	movl $45, %eax
 	int $0x80
 
  	movl $3, %eax	# Read
-	popl  %edx # Restore number of bytes
+	popl  %edx # Restore number of bytes 
 	# allocated, as this is the number we will read.
 	xor %esi, %esi
 	movl BRK_Start, %esi
@@ -250,34 +250,12 @@ a_wad:
 	popl %ebx # And restore the file handle
 	movl %esi, %ecx
 	int $0x80
-	# Now we've read the entire directory entry into the allocated memory
-
-
+	# Now we have read the entire directory entry into the allocated memory
 	movl numlumps, %ecx
-	
 
 lumpread_loop2:
 	pushl %ecx
-	movl $4, %eax
-	movl $1, %ebx
-	movl $offset, %ecx
-	movl $offset_len, %edx
-	int $0x80
 
-	movl (%esi), %eax
-	call printAscifiedInt
-
-	addl $4, %esi
-	movl $4, %eax
-	movl $1, %ebx
-	movl $size_label, %ecx
-	movl $size_label_len, %edx
-	int $0x80
-
-	movl (%esi), %eax
-	call printAscifiedInt
-
-	addl $4, %esi
 	movl $4, %eax
 	movl $1, %ebx
  
@@ -285,52 +263,24 @@ lumpread_loop2:
  	movl $lumpname_len, %edx
  	int $0x80
 	
-	movl $4, %eax
+
+	movl %esi, %edi
+	add $8, %edi 	# Point EDI to start of LUMPNAME string
+	call findnull
 	movl $1, %ebx
+	movl $4, %eax
 	movl %esi, %ecx
-	movl $8, %edx
-	int $0x80
-	addl $8, %esi
-	popl %ecx
-	loop lumpread_loop2
-	jmp end
-	
-	movl $4, %eax
-	movl $lumpname, %ecx
-	movl $lumpname_len, %edx
+	add $8, %ecx
+#	movl $8, %edx
 	int $0x80
 
-	movl lumpoffset, %eax
-	movl lumpsize, %eax
-	call printAscifiedInt
-	
-	popl %ebx
-	popl %ecx
-	loop lumpread_loop
-	movl numlumps, %ecx
-	popl %ebx
-
-lumpread_loop:
-	pushl %ecx
-	movl $3, %eax
-
-	call readLumpInfo
-	test %eax, %eax
-	js badread
-
-	pushl %ebx
 	movl $4, %eax
 	movl $1, %ebx
-	movl $lumpname, %ecx
-	movl $lumpname_len, %edx
-	int $0x80
-
-	movl $4, %eax
 	movl $offset, %ecx
 	movl $offset_len, %edx
 	int $0x80
 
-	movl lumpoffset, %eax
+	movl (%esi), %eax
 	call printAscifiedInt
 
 	movl $4, %eax
@@ -339,12 +289,13 @@ lumpread_loop:
 	movl $size_label_len, %edx
 	int $0x80
 
-	movl lumpsize, %eax
+	movl 4(%esi), %eax
 	call printAscifiedInt
-	
-	popl %ebx
+
+	addl $16, %esi
 	popl %ecx
-	loop lumpread_loop
+	loop lumpread_loop2
+	jmp end
 
 end:
 	movl $1, %eax
@@ -371,35 +322,12 @@ badread:
 	int $0x80
 	jmp end			
 
-
-# FUNCTION : readLumpInfo
 	
-	.type readLumpInfo, @function
-readLumpInfo:
-	# This requires the filehandle in %ebx
-	# Status is returned in %eax
-	
-	movl $lumpoffset, %ecx
-	movl $4, %edx
-	int $0x80
-	
- 	movl $3, %eax
-	movl $lumpsize, %ecx
-	movl $4, %edx
-	int $0x80
-	
-	movl $3, %eax
-	movl $lumpname+7, %ecx
-	movl $8, %edx
-	int $0x80
-	ret
-
-
 # FUNCTION : printAscifiedInt
 	# The int is in %eax
 	.type printAscifiedInt, @function
-	call int2ascii
 printAscifiedInt:
+	call int2ascii
 	movl $4, %eax
 	movl $1, %ebx
 	movl %edi, %ecx
@@ -412,17 +340,41 @@ printAscifiedInt:
 	.type int2ascii, @function
 int2ascii:
 	leal ascifiedint+31, %edi
-	movb $10, (%edi)
+	movb $10, (%edi) # Trailing newline
 	dec %edi
 	movl $10, %ecx
 	movl $2, ascifiedint_length
 nextdigit:	
 	xor %edx, %edx
-	divl %ecx
-	orb $0x30, %dl
+	divl %ecx	# Divide the EDX:EAX pair by ECX
+	orb $0x30, %dl  # Remainder in EDX, convert to ASCII
+	# As we are dividing by 10, the remainder will always
+	# fit in DL
 	movb %dl, (%edi)
+	cmpl $0, %eax	# No Quotent, so remainder was the final bit.
+	jz enddigit
 	dec %edi
-	incl ascifiedint_length
-	cmpl $0, %eax
-	jnz nextdigit
+	jmp nextdigit
+enddigit:	
+	movl $ascifiedint+32, %eax
+	subl %edi, %eax
+	movl %eax, ascifiedint_length
+	ret
+# FUNCTION : findnull
+	# Based on a string pointed by EDI, return in EDX the location
+	# of the NULL, otherwise return 8.
+	
+findnull:	
+	movl $8, %ecx	# Length of LUMPNAME
+	movl %ecx, %edx	# Set length to print to 8.
+	# Anything shorter than 8 characters for a LUMPNAME
+	# should be NULL terminated.
+	# If null terminated, we do not print the NULL
+	movl $0, %eax	# Searching for NULL
+	cld
+	repne scasb
+	jne notfound
+	subl %ecx, %edx	# Subtract ECX value
+	decl %edx	# and one more, because it stops one after it was found
+notfound:	
 	ret
